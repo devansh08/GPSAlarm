@@ -5,10 +5,18 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.net.Uri;
+import android.os.Handler;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.InputFilter;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.method.DigitsKeyListener;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -19,27 +27,28 @@ import java.math.BigDecimal;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int minTime = 1000 * 30;
-    private static final int minDistance = 50;
+    private static final int minTime = 5 * 1000;
+    private static final int minDistance = 0;
 
     EditText latitude, longitude;
     TextView cLatitude, cLongitude;
-    Button startUpdates, stopUpdates;
+    Button startUpdates, stopUpdates, stopAlarm;
 
     LocationManager locationManager;
+
+    Uri uri;
 
     LocationListener locationListener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
-            cLatitude.setText(String.valueOf(round(location.getLatitude(), 4)));
-            cLongitude.setText(String.valueOf(round(location.getLongitude(), 4)));
+            cLatitude.setText(String.valueOf(round(location.getLatitude())));
+            cLongitude.setText(String.valueOf(round(location.getLongitude())));
 
-            Toast.makeText(getApplicationContext(), "Location changed", Toast.LENGTH_LONG).show();
+            Toast.makeText(getApplicationContext(), "Location changed", Toast.LENGTH_SHORT).show();
 
-            if (round(Double.valueOf(latitude.getText().toString()), 4) ==
-                Double.valueOf(cLatitude.getText().toString()) &&
-                round(Double.valueOf(longitude.getText().toString()), 4) ==
-                Double.valueOf(longitude.getText().toString())) {
+            // Fix for negative numbers
+            if (round(Double.valueOf(latitude.getText().toString())) == Double.valueOf(cLatitude.getText().toString()) &&
+                    round(Double.valueOf(longitude.getText().toString())) == Double.valueOf(longitude.getText().toString())) {
 
                 notifyUser();
             }
@@ -74,8 +83,79 @@ public class MainActivity extends AppCompatActivity {
 
         startUpdates = findViewById(R.id.button);
         stopUpdates = findViewById(R.id.button2);
+        stopAlarm = findViewById(R.id.button3);
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+
+        uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+
+        stopAlarm.setEnabled(false);
+
+        latitude.setFilters(new InputFilter[] {
+                new DigitsKeyListener(Boolean.TRUE, Boolean.TRUE) {
+                    int beforeDecimal = 2, afterDecimal = 4;
+
+                    @Override
+                    public CharSequence filter(CharSequence source, int start, int end,
+                                               Spanned dest, int dstart, int dend) {
+                        String temp = latitude.getText() + source.toString();
+
+                        if (temp.equals(".")) {
+                            return "0.";
+                        } else if (temp.equals("0")) {
+                            return "";
+                        } else if (temp.equals("-")) {
+                            beforeDecimal++;
+                            return "-";
+                        } else if (!temp.contains(".")) {
+                            // no decimal point placed yet
+                            if (temp.length() > beforeDecimal) {
+                                return "";
+                            }
+                        } else {
+                            temp = temp.substring(temp.indexOf(".") + 1);
+                            if (temp.length() > afterDecimal) {
+                                return "";
+                            }
+                        }
+
+                        return super.filter(source, start, end, dest, dstart, dend);
+                    }
+                }
+        });
+
+        longitude.setFilters(new InputFilter[] {
+                new DigitsKeyListener(Boolean.TRUE, Boolean.TRUE) {
+                    int beforeDecimal = 3, afterDecimal = 4;
+
+                    @Override
+                    public CharSequence filter(CharSequence source, int start, int end,
+                                               Spanned dest, int dstart, int dend) {
+                        String temp = longitude.getText() + source.toString();
+
+                        if (temp.equals(".")) {
+                            return "0.";
+                        } else if (temp.equals("0")) {
+                            return "";
+                        } else if (temp.equals("-")) {
+                            beforeDecimal++;
+                            return "-";
+                        } else if (!temp.contains(".")) {
+                            // no decimal point placed yet
+                            if (temp.length() > beforeDecimal) {
+                                return "";
+                            }
+                        } else {
+                            temp = temp.substring(temp.indexOf(".") + 1);
+                            if (temp.length() > afterDecimal) {
+                                return "";
+                            }
+                        }
+
+                        return super.filter(source, start, end, dest, dstart, dend);
+                    }
+                }
+        });
 
         startUpdates.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -86,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
         stopUpdates.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Toast.makeText(getApplicationContext(), "This button is useless right now !!!", Toast.LENGTH_LONG).show();
+                stopLocationUpdates();
             }
         });
     }
@@ -114,17 +194,49 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void stopLocationUpdates() {
+        locationManager.removeUpdates(locationListener);
+        Toast.makeText(getApplicationContext(), "Location updates stopped", Toast.LENGTH_LONG).show();
+    }
+
     public void notifyUser() {
-        Toast.makeText(getApplicationContext(), "Location reached !!!", Toast.LENGTH_LONG).show();
+        final Ringtone ringtone = RingtoneManager.getRingtone(getApplicationContext(), uri);
+
+        ringtone.play();
+        stopAlarm.setEnabled(true);
+
+        Handler handler = new Handler();
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                stopAlarm(ringtone);
+            }
+        }, 10 * 1000);
+
+        stopAlarm.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopAlarm(ringtone);
+            }
+        });
+    }
+
+    public void stopAlarm(Ringtone ringtone) {
+        if(ringtone.isPlaying()) {
+            ringtone.stop();
+            stopAlarm.setEnabled(false);
+
+            stopLocationUpdates();
+        }
     }
 
     public boolean checkInput() {
         return TextUtils.isEmpty(latitude.getText()) || TextUtils.isEmpty(longitude.getText());
     }
 
-    public double round(double value, int numberOfDigitsAfterDecimalPoint) {
+    public double round(double value) {
         BigDecimal bigDecimal = new BigDecimal(value);
-        bigDecimal = bigDecimal.setScale(numberOfDigitsAfterDecimalPoint,
+        bigDecimal = bigDecimal.setScale(4,
                 BigDecimal.ROUND_HALF_UP);
         return bigDecimal.doubleValue();
     }
